@@ -1,0 +1,114 @@
+import heapq
+from collections import defaultdict
+from itertools import combinations
+
+class Mapa:
+    def __init__(self):
+        self.conexiones = defaultdict(list)
+        self.distancias = {}
+
+    def agregar_conexion(self, origen, destino, distancia):
+        self.conexiones[origen].append(destino)
+        self.conexiones[destino].append(origen)
+        self.distancias[(origen, destino)] = distancia
+        self.distancias[(destino, origen)] = distancia
+
+    def calcular_arb_min(self, puntos, cache_arb_min):
+        """
+        Calcula el costo del Árbol de Expansión Mínima (MST) para un conjunto de puntos no visitados.
+        Utiliza cache para almacenar resultados ya calculados.
+        """
+        puntos = frozenset(puntos)
+        if puntos in cache_arb_min:
+            return cache_arb_min[puntos]
+
+        if len(puntos) <= 1:
+            return 0
+
+        costo_arb_min = 0
+        explorados = set()
+        punto_inicial = next(iter(puntos))
+        cola_prioridad = [(0, punto_inicial)]
+
+        while len(explorados) < len(puntos):
+            coste, actual = heapq.heappop(cola_prioridad)
+            if actual in explorados:
+                continue
+
+            explorados.add(actual)
+            costo_arb_min += coste
+
+            for vecino in self.conexiones[actual]:
+                if vecino not in explorados and vecino in puntos:
+                    heapq.heappush(cola_prioridad, (self.distancias[(actual, vecino)], vecino))
+
+        # Verificar si el Árbol de Expansión cubre todos los puntos
+        if len(explorados) < len(puntos):
+            return float('inf')  # Devuelve infinito si el mapa no está conectado
+
+        cache_arb_min[puntos] = costo_arb_min
+        return costo_arb_min
+
+    def calcular_estimar_costo(self, punto_actual, puntos_faltantes, cache_arb_min):
+        """
+        Calcula la heurística basada en el MST y la distancia mínima de retorno al punto inicial.
+        """
+        costo_arb_min = self.calcular_arb_min(puntos_faltantes, cache_arb_min) if puntos_faltantes else 0
+        # Añadir el costo de retorno al punto inicial para la heurística, solo si hay puntos restantes
+        if puntos_faltantes:
+            costo_retorno = min([self.distancias.get((punto_actual, vecino), float('inf')) for vecino in puntos_faltantes], default=0)
+        else:
+            costo_retorno = 0
+        return costo_arb_min + costo_retorno
+
+    def resolver_ruta(self, inicio):
+        """
+        Implementación del algoritmo A* para resolver el problema del Viajante (TSP)
+        """
+        # Cola de prioridad para los puntos abiertos
+        abiertos = []
+        heapq.heappush(abiertos, (0, inicio, frozenset([inicio]), 0))
+
+        # Control de puntos ya visitados y sus costos mínimos
+        mejor_costo = { (inicio, frozenset([inicio])): 0 }
+        cache_arb_min = {}
+
+        while abiertos:
+            # Extrae el punto con menor f(n) = g(n) + h(n)
+            f, actual, visitados, g = heapq.heappop(abiertos)
+
+            # Condición de finalización: si se han visitado todos los puntos y regresamos al inicio
+            if len(visitados) == len(self.conexiones) and actual == inicio:
+                return g  # Costo total del ciclo óptimo encontrado
+
+            # Expandir los vecinos
+            for vecino in self.conexiones[actual]:
+                if vecino not in visitados or (len(visitados) == len(self.conexiones) and vecino == inicio):
+                    nuevo_visitados = visitados | frozenset([vecino])
+                    g_nuevo = g + self.distancias[(actual, vecino)]
+
+                    # Calcular heurística: MST de las ciudades restantes y el costo de retorno
+                    puntos_faltantes = set(self.conexiones.keys()) - nuevo_visitados
+                    h = self.calcular_estimar_costo(vecino, puntos_faltantes, cache_arb_min)
+                    f_nuevo = g_nuevo + h
+
+                    estado = (vecino, nuevo_visitados)
+                    if g_nuevo < mejor_costo.get(estado, float('inf')):
+                        mejor_costo[estado] = g_nuevo
+                        heapq.heappush(abiertos, (f_nuevo, vecino, nuevo_visitados, g_nuevo))
+
+        return None  # No se encontró un camino
+
+# Ejemplo de uso
+mapa = Mapa()
+rutas = [
+    ('X', 'Y', 12), ('X', 'Z', 10), ('X', 'W', 15),
+    ('Y', 'Z', 25), ('Y', 'W', 20),
+    ('Z', 'W', 18)
+]
+
+for ruta in rutas:
+    mapa.agregar_conexion(*ruta)
+
+costo_minimo_ruta = mapa.resolver_ruta('X')
+print("Costo mínimo del ciclo:", costo_minimo_ruta)
